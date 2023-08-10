@@ -1,0 +1,224 @@
+---
+title: "Bellabeat Project"
+author: "Koki Nishida"
+date: "2023-07-31"
+output: html_document
+---
+
+```{r echo=FALSE}
+knitr::include_graphics("bellabeat.png")
+```
+
+In this project, I will showcase my process of data analysis using R.
+
+# Scenario
+
+You are a junior data analyst working on the marketing analyst team at Bellabeat, a high-tech manufacturer of health-focused products for women. Bellabeat is a successful small company, but they have the potential to become a larger player in the global smart device market. Urška Sršen, cofounder and Chief Creative Officer of Bellabeat, believes that analyzing smart device fitness data could help unlock new growth opportunities for the company. You have been asked to focus on one of Bellabeat's products and analyze smart device data to gain insight into how consumers are using their smart devices. The insights you discover will then help guide marketing strategy for the company.
+
+## Business Task
+
+To analyze smart device usage data in order to gain insight into how consumers use non-Bellabeat smart devices.
+
+# Ask
+
+-   What are some trends in smart device usage?
+
+-   How could these trends apply to Bellabeat customers?
+
+-   How could these trends help influence Bellabeat marketing strategy?
+
+# Prepare
+
+We will be using Fitbit Fitness Tracker Data [link](https://www.kaggle.com/datasets/arashnic/fitbit) that contains personal fitness tracker from 30 fitbit users. Thirty eligible Fitbit users consented to the submission of personal tracker data, including minute-level output for physical activity, heart rate, and sleep monitoring. It includes information about daily activity, steps, and heart rate that can be used to explore users' habits.
+
+## ROCCC analysis
+
+-   Reliability: Data collected from 30 individuals whose gender is unknown
+
+-   Originality: Third party data collected
+
+-   Comprehensive: Data contains multiple fields
+
+-   Current: Data is 5 years old
+
+-   Cited: Data source is well documented
+
+```{r}
+# install and load packages
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(lubridate)
+
+
+```
+
+# Process
+```{r}
+daily_activity <- read.csv("Fitabase Data 4.12.16-5.12.16/dailyActivity_merged.csv")
+daily_sleep <- read.csv("Fitabase Data 4.12.16-5.12.16/sleepDay_merged.csv")
+weight_log <- read.csv("Fitabase Data 4.12.16-5.12.16/weightLoginfo_merged.csv")
+
+```
+
+```{r}
+# preview data
+str(daily_activity)
+str(daily_sleep)
+str(weight_log)
+
+```
+```{r}
+#format column names
+daily_activity<- clean_names(daily_activity)
+daily_sleep <- clean_names(daily_sleep)
+weight_log <- clean_names(weight_log)
+# format date
+daily_activity$activity_date <- as.Date(daily_activity$activity_date,'%m/%d/%y')
+daily_sleep$sleep_day <- as.Date(daily_sleep$sleep_day,'%m/%d/%y')
+weight_log $date <- parse_date_time(weight_log$date, '%m/%d/%y %H:%M:%S %p')
+# format logical
+weight_log$is_manual_report <- as.logical(weight_log$is_manual_report)
+head(weight_log)
+```
+
+```{r}
+# check for duplicates
+duplicates <- sum(duplicated(daily_activity))
+duplicates1 <- sum(duplicated(daily_sleep))
+duplicates2 <- sum(duplicated(weight_log))
+# daily_sleep contains duplicates
+daily_sleep <- unique(daily_sleep)
+# check for nulls
+daily_sleep <- na.omit(daily_sleep)
+# check for incorrect data
+criteria <- daily_activity$total_steps >=0 & daily_activity$total_distance >= 0
+daily_activity <- daily_activity[criteria,]
+```
+
+
+```{r}
+# add weekday in daily_activity
+daily_activity$day_of_week <- wday(daily_activity$activity_date,label=T,abbr=T)
+# sum up active hours
+daily_activity$total_active_hours = round((daily_activity$very_active_minutes+daily_activity$fairly_active_minutes+daily_activity$lightly_active_minutes)/60, digits = 2)
+# sedentary hours
+daily_activity$sedentary_hours = round((daily_activity$sedentary_minutes)/60, digits = 2)
+
+#time taken to fall asleep 
+daily_sleep$hours_in_bed = round((daily_sleep$total_time_in_bed)/60, digits = 2)
+daily_sleep$hours_asleep = round((daily_sleep$total_minutes_asleep)/60,digits = 2)
+daily_sleep$time_taken_to_sleep = (daily_sleep$hours_in_bed - daily_sleep$hours_asleep)
+ # remove fat column
+weight_log <- weight_log %>% 
+  select(-c(fat))
+# add new column that indicates users health status
+weight_log <- weight_log %>% 
+  mutate(bmi2 = case_when(
+    bmi > 24.9 ~'Overweight',
+    bmi< 18.5~'Underweight',
+    TRUE ~ 'Healthy'
+  )
+  )
+```
+
+```{r}
+# remove values where total_active_hours = 0 and calories burned = 0
+daily_activity_cleaned <- daily_activity[!(daily_activity$calories <= 0),]
+daily_activity_cleaned <- daily_activity_cleaned[!(daily_activity_cleaned$total_active_hours <= 0.00),]
+
+
+# Export data
+write.csv(daily_activity_cleaned, file = "daily_activity.csv", row.names=TRUE)
+write.csv(daily_sleep, file = "daily_sleep.csv", row.names=TRUE)
+write.csv(weight_log, file = "weight_log.csv", row.names=TRUE)
+```
+
+
+# Analyze
+We will perform analysis in R using the ggplot package. Based on the business tasks, we will answer these questions. 
+
+1. Calculate the average of steps taken, active minutes, sedentary hours, and sleep hours
+
+2. Which day during the week are users most active?
+ 
+3. Calories burned vs. active hours, steps, sedentary hours
+
+4. Weight vs. steps taken
+
+## Code
+```{r}
+summary(daily_activity_cleaned$total_steps)
+```
+```{r}
+summary(daily_activity_cleaned$very_active_minutes)
+```
+```{r}
+summary(daily_activity_cleaned$sedentary_hours)
+```
+```{r}
+summary(daily_sleep$hours_asleep)
+```
+Some takeaways:
+- The mean steps taken was 8319 steps which is in the somewhat active range 7500-9999. The lower quartile does not meet the range.
+
+- The mean very active minutes is 23.21 minutes which does not meet the recommended 30 minutes of exercise per day. Only the upper quartile meets the line.
+
+- The mean sedentary hours is 15.87 hours. This is extremely high considering the recommended limit of 7-10 hours. 
+
+- The mean hours asleep is 6.987 hours, barely hitting the recommended sleep time of 7-9 hours. 
+
+
+```{r}
+# analyze activity per day
+ggplot(data=daily_activity_cleaned, mapping = aes(x=day_of_week,y=total_steps)) + geom_col(fill='blue') + labs(x='Day of Week',y='Total Steps',title='Total Steps Taken Per Day')
+
+ggplot(data=daily_activity_cleaned, mapping = aes(x=day_of_week,y=very_active_minutes)) + geom_col(fill='orange') + labs(x='Day of Week',y='Very Active Minutes',title='Total Activity Per Day')
+
+ggplot(data=daily_activity_cleaned, mapping = aes(x=day_of_week,y=calories)) + geom_col(fill='darkgreen') + labs(x='Day of Week',y='Calories',title='Total Calories Burned Per Day')
+```
+The most active day during the week is Sunday. There is a declining trend from Monday to Friday. This could be possible due to fatigue and motivation from work. 
+
+```{r}
+# Analyze Calories vs. active hours, steps, sedentary hours
+
+ggplot(data = daily_activity_cleaned, mapping=aes(x=total_active_hours,y=calories)) + geom_smooth() + geom_point(color='darkgreen') + labs(x='Total Active Hours', y='Calories Burned', title = 'Calories Burned vs. Active Hours')
+
+ggplot(data = daily_activity_cleaned, mapping=aes(x=total_steps,y=calories)) + geom_smooth() + geom_point(color='red') + labs(x='Total Steps Taken', y='Calories Burned', title = 'Calories Burned vs. Steps Taken')
+
+ggplot(data = daily_activity_cleaned, mapping=aes(x=sedentary_hours,y=calories)) + geom_smooth() + geom_point(color='purple') + labs(x='Total Sedentary Hours', y='Calories Burned', title = 'Calories Burned vs. Sedentary Hours')
+```
+We found a positive correlation between calories burned and total active hours/total steps as expected. The more active people are, the more exercise they are getting and thus leads to more calories burned. 
+
+However, the correlation betweem sedentary hours and calories burned is quite complicated. Looking at the overall picture, we can see that most people fall within 1000 to 3000 calories no matter the amount of sedentary hours. It is reasonable to assume that people burn their calories in different ways and need different sedentary hours. 
+
+Now, for weight analysis, we must merge the tables. 
+```{r}
+activity_weight<- merge(daily_activity_cleaned, weight_log, by=c('id'))
+# now get rid of duplicates
+activity_weight<-unique(activity_weight)
+#export it
+write.csv(activity_weight, file = "activity_weight.csv", row.names=TRUE)
+
+ggplot(data=activity_weight, mapping=aes(x=total_steps,y=weight_kg))+ geom_violin(color='black',fill='darkgreen') + labs(x='Total Steps',y='Weight in kg',title='Relationship Between Weight and Total Steps')
+ggplot(data=activity_weight, mapping=aes(x=very_active_minutes,y=weight_kg))+ geom_violin(color='black',fill='violet') + labs(x='Very Active Minutes',y='Weight in kg',title='Relationship Between Weight and Very Active Minutes')
+```
+The result shows that the users weighing 60kg and 85kg are the most active. The violin graph demonstrates the probability density. The wider it is the higher the density is. 
+
+# Share
+Visualization is created on Tableau Public.
+
+# Act
+
+After analysis, we found that users spend more time engaged in physical activities on Sundays. Throughout the week, the activity declines with a slight peak on Thursdays and a slow increase on Saturday. 
+
+Hypothesis: 
+
+Most people have more free time on the weekends and are more motivated to workout and get some exercise. Weekdays are most busy for people with work and we see a consistent and low activity on Friday. Fridays are assumed to be the day with most people hanging out and engaged in activities as the end of the week. 
+
+Recommendations for Bellabeat's marketing strategy:
+
+- Bellabeat could implement a reward system to those who meet a goal everyday such as product discounts. This will both help bring new customers and increase activity for existing customers. 
+
+- On Fridays, there can be user competition/goal for points to which they can exchange for products to encourage people to keep up their workouts on Fridays too. 
+- Post motivational/before-after videos and promotions. 
